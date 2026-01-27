@@ -123,111 +123,170 @@ let undoStack = []; // Stores previous suggestions for undo
 
 function displayResults(results) {
     const container = document.getElementById("results");
-    container.innerHTML = ""; // Clear previous
+    container.innerHTML = ""; 
 
-    results.forEach((item, idx) => {
+    const improvedResults = results.filter(item => 
+        item.simplified.lint_score <= item.original.lint_score
+    );
+
+    if (improvedResults.length === 0) {
+        container.innerHTML = "<em>No suggestions improved the lint score.</em>";
+        return;
+    }
+
+    // --- 1. Create the Undo Button ONCE ---
+    if (!document.getElementById("undoBtn")) {
+        const undoBtn = document.createElement("button");
+        undoBtn.id = "undoBtn";
+        undoBtn.textContent = "Undo last change";
+        undoBtn.style.marginBottom = "10px"; // Give it some space
+        
+        undoBtn.addEventListener("click", async () => {
+            if (undoStack.length === 0) return;
+
+            const lastChange = undoStack.pop();
+            await replaceInWord(lastChange.original, lastChange.applied);
+            
+            updateUndoButtonState(); 
+        });
+
+        // Insert at the top of the container's parent
+        container.parentElement.insertBefore(undoBtn, container);
+    }
+    
+    // Set the initial state (disabled because stack is empty at start)
+    updateUndoButtonState();
+
+    improvedResults.forEach((item, idx) => {
         const div = document.createElement("div");
         div.className = "result-card";
 
-        // Save original text for undo
-        undoStack.push({
-            original: item.original.sentence,
-            simplified: item.simplified.sentence,
-            index: idx
-        });
+        // NOTE: I removed the undoStack.push that was here. 
+        // We only push when the user clicks "Accepteren".
 
         div.innerHTML = `
-            <div>
-                <strong>Original:</strong>
-                <span class="original-text">${item.original.sentence}</span>
-            </div>
-            <div>
-                Lint Score: ${item.original.lint_score} | Valid: ${item.original.valid}
-            </div>
-            <div>
-                <strong>Simplified:</strong> 
-                <span class="simplified-text">${item.simplified.sentence}</span>
-            </div>
-            <div>
-                Lint Score: ${item.simplified.lint_score} | Valid: ${item.simplified.valid}
-            </div>
-            <div>
+            <div><strong>Original:</strong> <span class="original-text">${item.original.sentence}</span></div>
+            <div>Lint Score: ${item.original.lint_score}</div>
+            <div><strong>Simplified:</strong> <span class="simplified-text">${item.simplified.sentence}</span></div>
+            <div>Lint Score: ${item.simplified.lint_score}</div>
+            <div class="button-group">
                 <button class="accept-btn">Accepteren</button>
                 <button class="modify-btn">Aanpassen</button>
                 <button class="deny-btn">Weigeren</button>
             </div>
         `;
 
-        // Button actions
         const acceptBtn = div.querySelector(".accept-btn");
         const modifyBtn = div.querySelector(".modify-btn");
         const denyBtn = div.querySelector(".deny-btn");
-        const textSpan = div.querySelector(".simplified-text");
 
+        // --- 2. Handle Accept ---
         acceptBtn.addEventListener("click", async () => {
             await replaceInWord(item.simplified.sentence, item.original.sentence);
+
+            undoStack.push({
+                original: item.original.sentence,
+                applied: item.simplified.sentence
+            });
+
+            updateUndoButtonState(); 
             div.remove();
         });
 
-        denyBtn.addEventListener("click", () => {
-            div.remove(); // Remove suggestion
-        });
+        denyBtn.addEventListener("click", () => div.remove());
 
+        // --- 3. Handle Modify ---
         modifyBtn.addEventListener("click", () => {
-            const input = document.createElement("input");
-            input.type = "text";
-            input.value = textSpan.textContent;
-            input.style.width = "80%";
-
-            const saveBtn = document.createElement("button");
-            saveBtn.textContent = "Accepteren";
-            const cancelBtn = document.createElement("button");
-            cancelBtn.textContent = "Weigeren";
+            const originalButtonsDiv = div.querySelector(".button-group");
+            originalButtonsDiv.style.display = "none";
 
             const modifyDiv = document.createElement("div");
-            modifyDiv.appendChild(input);
-            modifyDiv.appendChild(saveBtn);
-            modifyDiv.appendChild(cancelBtn);
+            const input = document.createElement("input");
+            input.type = "text";
+            input.value = item.simplified.sentence;
+            input.style.width = "70%";
 
-            div.querySelector("div:last-child").replaceWith(modifyDiv);
+            const saveBtn = document.createElement("button");
+            saveBtn.textContent = "Opslaan";
+            
+            const cancelBtn = document.createElement("button");
+            cancelBtn.textContent = "Annuleren";
+
+            modifyDiv.append(input, saveBtn, cancelBtn);
+            div.appendChild(modifyDiv);
 
             saveBtn.addEventListener("click", async () => {
                 await replaceInWord(input.value, item.original.sentence);
+                
+                undoStack.push({
+                    original: item.original.sentence,
+                    applied: input.value
+                });
+
+                updateUndoButtonState();
                 div.remove();
             });
 
             cancelBtn.addEventListener("click", () => {
-                modifyDiv.replaceWith(div.querySelector("div:last-child"));
+                modifyDiv.remove();
+                originalButtonsDiv.style.display = "block";
             });
         });
 
         container.appendChild(div);
     });
-
-    // Undo button
-    if (!document.getElementById("undoBtn")) {
-        const undoBtn = document.createElement("button");
-        undoBtn.id = "undoBtn";
-        undoBtn.textContent = "Undo last changes";
-        undoBtn.addEventListener("click", async () => {
-            for (const entry of undoStack) {
-                await replaceInWord(entry.original, entry.simplified);
-            }
-            undoStack = [];
-            container.innerHTML = "";
-        });
-        container.parentElement.insertBefore(undoBtn, container);
-    }
 }
+
 
 // Replace text in Word document
 async function replaceInWord(newText, oldText) {
     await Word.run(async (context) => {
-        const body = context.document.body;
-        body.load("text");
+        const results = context.document.body.search(oldText);
+        results.load("items");
         await context.sync();
 
-        body.search(oldText).getFirst().insertText(newText, "Replace");
-        await context.sync();
+        if (results.items.length > 0) {
+            // Grab the first instance found
+            results.items[0].insertText(newText, Word.InsertLocation.replace);
+            await context.sync();
+        } else {
+            console.warn("Could not find text to replace:", oldText);
+        }
     });
+}
+
+// Function to toggle the button's appearance and functionality
+function updateUndoButtonState() {
+    const undoBtn = document.getElementById("undoBtn");
+    if (!undoBtn) return;
+
+    if (undoStack.length === 0) {
+        undoBtn.disabled = true;
+        undoBtn.style.opacity = 0.5;
+        undoBtn.style.cursor = "not-allowed";
+    } else {
+        undoBtn.disabled = false;
+        undoBtn.style.opacity = 1;
+        undoBtn.style.cursor = "pointer";
+    }
+}
+
+// Update your Undo Button creation inside displayResults
+if (!document.getElementById("undoBtn")) {
+    const undoBtn = document.createElement("button");
+    undoBtn.id = "undoBtn";
+    undoBtn.textContent = "Undo last change";
+    
+    undoBtn.addEventListener("click", async () => {
+        if (undoStack.length === 0) return;
+
+        const lastChange = undoStack.pop();
+        await replaceInWord(lastChange.original, lastChange.applied);
+        
+        // Refresh button state after popping
+        updateUndoButtonState(); 
+    });
+
+    container.parentElement.insertBefore(undoBtn, container);
+    updateUndoButtonState(); // Set initial disabled state
 }
