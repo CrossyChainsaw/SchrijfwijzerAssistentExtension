@@ -240,6 +240,16 @@ function createSuggestionCard(item, container, prepend = false) {
         });
     });
 
+    // HOVER LOGIC: Highlight text in Word
+    div.addEventListener("mouseenter", async () => {
+        await highlightInWord(item.original.sentence);
+    });
+
+    // OPTIONAL: Clear selection when mouse leaves the card
+    div.addEventListener("mouseleave", async () => {
+        await clearSelectionInWord();
+    });
+
     if (prepend) {
         container.prepend(div);
     } else {
@@ -282,4 +292,29 @@ function updateUndoButtonState() {
     undoBtn.disabled = isEmpty;
     undoBtn.style.opacity = isEmpty ? 0.5 : 1;
     undoBtn.style.cursor = isEmpty ? "not-allowed" : "pointer";
+}
+
+async function highlightInWord(textToFind) {
+    await Word.run(async (context) => {
+        // Similar to your replace logic, handle the 255-char limit
+        const searchString = textToFind.length > 250 ? textToFind.substring(0, 250) : textToFind;
+        
+        const results = context.document.body.search(searchString);
+        results.load("items");
+        await context.sync();
+
+        if (results.items.length > 0) {
+            results.items[0].select(); // This highlights the text in the document
+            await context.sync();
+        }
+    }).catch(err => console.error("Highlight error:", err));
+}
+
+async function clearSelectionInWord() {
+    await Word.run(async (context) => {
+        // Deselecting usually means moving the cursor to the end of the current selection
+        const selection = context.document.getSelection();
+        selection.select(Word.SelectionMode.end); 
+        await context.sync();
+    }).catch(err => console.error("Clear selection error:", err));
 }
