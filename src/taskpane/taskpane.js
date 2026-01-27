@@ -14,10 +14,24 @@ Office.onReady(() => {
     newBtn.addEventListener("click", async () => {
         if (exporting) return; 
         exporting = true;
-        await exportSentences();
-        exporting = false;
+
+        // Disable button and grey it out
+        newBtn.disabled = true;
+        newBtn.style.opacity = 0.5;
+        newBtn.style.cursor = "not-allowed";
+
+        try {
+            await exportSentences();
+        } finally {
+            // Re-enable button after requests finish
+            exporting = false;
+            newBtn.disabled = false;
+            newBtn.style.opacity = 1;
+            newBtn.style.cursor = "pointer";
+        }
     });
 });
+
 
 
 async function exportSentences() {
