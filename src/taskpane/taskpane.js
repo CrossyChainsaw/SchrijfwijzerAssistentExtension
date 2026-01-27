@@ -14,9 +14,9 @@ Office.onReady(() => {
     if (initialized) return;
     initialized = true;
 
-    const btn = document.getElementById("exportBtn");
+    const btn = document.getElementById("export-btn");
     btn.replaceWith(btn.cloneNode(true));
-    const newBtn = document.getElementById("exportBtn");
+    const newBtn = document.getElementById("export-btn");
 
     newBtn.addEventListener("click", async () => {
         if (exporting) return;
@@ -35,7 +35,39 @@ Office.onReady(() => {
             newBtn.style.cursor = "pointer";
         }
     });
+
+    // Setup Undo Button
+    const resultsContainer = document.getElementById("results");
+    setupUndoButton(resultsContainer);
 });
+
+function setupUndoButton(container) {
+    const undoBtn = document.getElementById("undo-btn");
+    if (!undoBtn) return;
+
+    // Use a fresh clone to clear any old listeners
+    const newUndoBtn = undoBtn.cloneNode(true);
+    undoBtn.replaceWith(newUndoBtn);
+
+    newUndoBtn.addEventListener("click", async () => {
+        if (undoStack.length === 0) return;
+
+        const lastChange = undoStack.pop();
+
+        if (lastChange.type === "replace") {
+            await replaceInWord(lastChange.fullItem.original.sentence, lastChange.appliedText);
+            createSuggestionCard(lastChange.fullItem, container, true);
+        } 
+        else if (lastChange.type === "deny") {
+            createSuggestionCard(lastChange.fullItem, container, true);
+        }
+
+        updateUndoButtonState();
+    });
+
+    // CRITICAL: Force the state to be correct based on the stack
+    updateUndoButtonState();
+}
 
 async function exportSentences() {
     await Word.run(async (context) => {
@@ -119,37 +151,6 @@ function displayResults(results) {
     });
 
     updateUndoButtonState();
-}
-
-function setupUndoButton(container) {
-    if (document.getElementById("undoBtn")) return;
-
-    const undoBtn = document.createElement("button");
-    undoBtn.id = "undoBtn";
-    undoBtn.textContent = "Undo last change";
-    undoBtn.style.display = "block";
-    undoBtn.style.marginBottom = "15px";
-
-    undoBtn.addEventListener("click", async () => {
-        if (undoStack.length === 0) return;
-
-        const lastChange = undoStack.pop();
-
-        if (lastChange.type === "replace") {
-            // 1. Revert text in Word
-            await replaceInWord(lastChange.fullItem.original.sentence, lastChange.appliedText);
-            // 2. Put the card back in the UI
-            createSuggestionCard(lastChange.fullItem, container, true);
-        } 
-        else if (lastChange.type === "deny") {
-            // Just put the card back in the UI (no Word changes needed)
-            createSuggestionCard(lastChange.fullItem, container, true);
-        }
-
-        updateUndoButtonState();
-    });
-
-    container.parentElement.insertBefore(undoBtn, container);
 }
 
 function createSuggestionCard(item, container, prepend = false) {
@@ -285,7 +286,7 @@ async function replaceInWord(newText, oldText) {
 }
 
 function updateUndoButtonState() {
-    const undoBtn = document.getElementById("undoBtn");
+    const undoBtn = document.getElementById("undo-btn");
     if (!undoBtn) return;
 
     const isEmpty = undoStack.length === 0;

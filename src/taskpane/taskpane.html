@@ -33,7 +33,7 @@
             width: 80px;
         }
         .accept-btn {
-            background-color: #b2e375;
+            background-color: #e9e9e9;
             color: black;
             border: none;
             padding: 6px 12px;
@@ -43,10 +43,10 @@
             transition: background-color 0.2s;
         }
         .accept-btn:hover {
-            background-color: #75954e; /* Slightly darker green on hover */
+            background-color: #888888; /* Slightly darker green on hover */
         }
         .modify-btn {
-            background-color: #f3af5e;
+            background-color: #e9e9e9;
             color: black;
             border: none;
             padding: 6px 12px;
@@ -56,11 +56,11 @@
             transition: background-color 0.2s;
         }
         .modify-btn:hover {
-            background-color: #a97a41; /* Slightly darker green on hover */
+            background-color: #888888; /* Slightly darker green on hover */
         }
 
         .deny-btn {
-            background-color: #ec6779;
+            background-color: #e9e9e9;
             color: black;
             border: none;
             padding: 6px 12px;
@@ -70,14 +70,47 @@
             transition: background-color 0.2s;
         }
         .deny-btn:hover {
-            background-color: #a14f4f; /* Slightly darker red on hover */
+            background-color: #888888; /* Slightly darker red on hover */
         }
+
+        
+        .export-btn {
+            background-color: #e9e9e9;
+            color: black;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .export-btn:hover {
+            background-color: #888888; /* Slightly darker red on hover */
+        }
+
+
+        .undo-btn {
+            background-color: #e9e9e9;
+            color: black;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .undo-btn:hover {
+            background-color: #888888; /* Slightly darker red on hover */
+        }
+
+        
 
     </style>
 </head>
 
 <body>
-    <button id="exportBtn">Export sentences & simplify</button>
+    <button id="export-btn" class="export-btn">Tekst Controleren</button>
+    <button id="undo-btn" class="undo-btn" disabled>Ongedaan maken</button>
     <div id="results"></div>
 
     <script src="taskpane.js"></script>
