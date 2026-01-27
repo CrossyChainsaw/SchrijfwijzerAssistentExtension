@@ -1,0 +1,44 @@
+<!-- Copyright (c) Microsoft Corporation. All rights reserved. Licensed under the MIT License. -->
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+    <title>Sentence Exporter</title>
+    <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 15px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 14px;
+            margin-bottom: 15px;
+        }
+        #results {
+            margin-top: 15px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .result-card {
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-bottom: 8px;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+        }
+        .result-card strong {
+            display: inline-block;
+            width: 80px;
+        }
+    </style>
+</head>
+
+<body>
+    <button id="exportBtn">Export sentences & simplify</button>
+    <div id="results"></div>
+
+    <script src="taskpane.js"></script>
+</body>
+</html>
