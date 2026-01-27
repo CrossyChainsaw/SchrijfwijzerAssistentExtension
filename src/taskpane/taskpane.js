@@ -1,12 +1,10 @@
+// Demo Customization
+let improvementMethod = "b1"; // better/b1 (betere lint score of binnen B1 range (36.18-50.07)) 
+let showLintScores = false; // true/false (lint scores in UI)
+
+
+
 /* global Office, Word */
-
-// Customization
-let improvementMethod;
-improvementMethod = "better"; // only if simplified is better than original
-// improvementMethod = "b1"; // only if simplified is between B1 range (36.18-50.07)
-
-
-
 
 let initialized = false;
 let exporting = false;
@@ -162,11 +160,11 @@ function createSuggestionCard(item, container, prepend = false) {
     div.style.marginBottom = "10px";
 
     div.innerHTML = `
-        <div><strong>Original:</strong> ${item.original.sentence}</div>
-        <div>Lint Score: ${item.original.lint_score}</div>
+        <div><strong>Origineel:</strong> ${item.original.sentence}</div>
+        ${showLintScores ? `<div>Lint Score: ${item.original.lint_score}</div>` : ""}
         <hr>
-        <div><strong>Simplified:</strong> <span class="simplified-text">${item.simplified.sentence}</span></div>
-        <div>Lint Score: ${item.simplified.lint_score}</div>
+        <div><strong>Suggestie:</strong> <span class="simplified-text">${item.simplified.sentence}</span></div>
+        ${showLintScores ? `<div>Lint Score: ${item.simplified.lint_score}</div>` : ""}
         <div class="button-group" style="margin-top: 10px;">
             <button class="accept-btn">Accepteren</button>
             <button class="modify-btn">Aanpassen</button>
