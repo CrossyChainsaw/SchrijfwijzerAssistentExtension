@@ -68,6 +68,15 @@ async function exportSentences() {
 
                 if (response.ok) {
                     const data = await response.json();
+
+                    // CLEANING LOGIC: Remove the [[ ## completed ##]] tag if it exists
+                    // The regex /\[\[\s*##\s*completed\s*##\s*\]\]/gi handles variations in spacing
+                    if (data.simplified && data.simplified.sentence) {
+                        data.simplified.sentence = data.simplified.sentence
+                            .replace(/\[\[\s*##\s*completed\s*##\s*\]\]/gi, "")
+                            .trim();
+                    }
+
                     results.push(data);
                 }
             } catch (err) {
