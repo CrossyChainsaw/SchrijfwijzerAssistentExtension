@@ -1,6 +1,0 @@
-1. click on a button ✅
-2. each sentence will be placed below one another in a markdown file ✅
-3. request to LLM API ⌛️
-
-zin 1:
-De gemeente verwerkt persoonlijke gegevens zoals dat staat beschreven in de Wmo 2015 en de AVG (artikel 6, lid 1e). Wij zullen deze gegevens niet langer bewaren dan noodzakelijk. Voor meer informatie kijkt u op www.wormerland.nl, zoekterm “privacy”. 
