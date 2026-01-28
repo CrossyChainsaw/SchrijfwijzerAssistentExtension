@@ -3,7 +3,7 @@
 // =====================
 // CONFIG
 // =====================
-let improvementMethod = "b1";
+let improvementMethod = "better"; // "b1" or "better"
 let showLintScores = true;
 
 let useMockSuggestions = false;
@@ -118,10 +118,16 @@ async function fetchSuggestion(sentence) {
 // DISPLAY + PAGINATION
 // =====================
 function displayResults(results) {
-    paginatedResults = results.filter(item =>
-        item.simplified.lint_score >= 36.18 &&
-        item.simplified.lint_score <= 50.07
-    );
+    if (improvementMethod === "better") {
+        paginatedResults = results.filter(item =>
+            item.simplified.lint_score < item.original.lint_score
+        );
+    } else if (improvementMethod === "b1") {
+        paginatedResults = results.filter(item =>
+            item.simplified.lint_score >= 36.18 &&
+            item.simplified.lint_score <= 50.07
+        );
+    }
 
     const container = document.getElementById("results");
     container.innerHTML = "";
@@ -137,7 +143,6 @@ function displayResults(results) {
 }
 
 function renderPagination(container) {
-    // Check if pagination already exists
     let div = document.getElementById("pagination");
     if (!div) {
         div = document.createElement("div");
@@ -164,26 +169,46 @@ function renderPagination(container) {
             }
         };
     }
+
+    // Update button states every render
+    const maxPage = Math.ceil(paginatedResults.length / pageSize);
+    document.getElementById("prev-page").disabled = currentPage === 1;
+    document.getElementById("next-page").disabled = currentPage === maxPage;
 }
 
 
 function renderCurrentPage() {
     const container = document.getElementById("results");
-    container.querySelectorAll(".result-card").forEach(e => e.remove());
+    container.innerHTML = "";
+
+    if (!paginatedResults.length) {
+        container.innerHTML = "De brief is op B1-niveau!<br><br>U dient de brief zelf kritisch na te lezen.";
+        clearSelectionInWord();
+        updateUndoButtonState();
+        updatePaginationButtons();
+        return;
+    }
+
+    const maxPage = Math.ceil(paginatedResults.length / pageSize);
+    if (currentPage > maxPage) currentPage = maxPage;
+
+    // Re-render pagination every time
+    renderPagination(container);
 
     const start = (currentPage - 1) * pageSize;
     const pageItems = paginatedResults.slice(start, start + pageSize);
 
     pageItems.forEach(item => createSuggestionCard(item, container));
 
-    const maxPage = Math.ceil(paginatedResults.length / pageSize);
     document.getElementById("page-info").textContent = `${currentPage} van ${maxPage}`;
-    document.getElementById("prev-page").disabled = currentPage === 1;
-    document.getElementById("next-page").disabled = currentPage === maxPage;
+    updatePaginationButtons();
 
     if (pageItems.length === 1) highlightInWord(pageItems[0].original.sentence);
     else clearSelectionInWord();
 }
+
+
+
 
 // =====================
 // CARD
@@ -480,11 +505,12 @@ function removeItemFromPagination(item) {
 
     const container = document.getElementById("results");
     if (!paginatedResults.length) {
-        container.innerHTML = "De brief is op B1-niveau!<br><br>U dient de brief zelf kritisch na te lezen.";
-        clearSelectionInWord();
+        currentPage = 1;
+        renderCurrentPage();
         updateUndoButtonState();
         return;
     }
+
 
     currentPage = Math.min(currentPage, Math.ceil(paginatedResults.length / pageSize));
     renderCurrentPage();
@@ -562,7 +588,12 @@ function enableAllButtons() {
 }
 
 function updatePaginationButtons() {
+    const prevBtn = document.getElementById("prev-page");
+    const nextBtn = document.getElementById("next-page");
+
     const maxPage = Math.ceil(paginatedResults.length / pageSize);
-    document.getElementById("prev-page").disabled = currentPage === 1;
-    document.getElementById("next-page").disabled = currentPage === maxPage;
+
+    if (prevBtn) prevBtn.disabled = currentPage === 1 || paginatedResults.length === 0;
+    if (nextBtn) nextBtn.disabled = currentPage === maxPage || paginatedResults.length === 0;
 }
+
