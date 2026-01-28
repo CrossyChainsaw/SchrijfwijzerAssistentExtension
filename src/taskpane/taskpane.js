@@ -5,7 +5,10 @@
 // =====================
 // Demo settings
 let improvementMethod = "b1";
-let showLintScores = false;
+let showLintScores = true; // broken
+
+// Mock settings
+let useMockSuggestions = false;
 
 // Pagination
 let currentPage = 1;
@@ -16,9 +19,6 @@ let paginatedResults = [];
 let initialized = false;
 let exporting = false;
 let undoStack = [];
-
-// Mock settings
-let useMockSuggestions = true;
 
 // =====================
 // OFFICE INIT
