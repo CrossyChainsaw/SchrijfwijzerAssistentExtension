@@ -3,11 +3,9 @@
 // =====================
 // CONFIG
 // =====================
-// Demo settings
 let improvementMethod = "b1";
-let showLintScores = true; // broken
+let showLintScores = true;
 
-// Mock settings
 let useMockSuggestions = false;
 
 // Pagination
@@ -31,122 +29,110 @@ Office.onReady(() => {
     const newBtn = oldBtn.cloneNode(true);
     oldBtn.replaceWith(newBtn);
 
-    newBtn.addEventListener("click", async () => {
-        if (exporting) return;
-
-        exporting = true;
-        newBtn.disabled = true;
-        newBtn.style.opacity = 0.5;
-        newBtn.style.cursor = "not-allowed";
-
-        try {
-            await exportSentences();   // waits for ALL sentences
-        } finally {
-            exporting = false;
-            newBtn.disabled = false;
-            newBtn.style.opacity = 1;
-            newBtn.style.cursor = "pointer";
-        }
-    });
+    newBtn.addEventListener("click", exportAllSentences);
 
     setupUndoButton();
 });
 
-
 // =====================
-// EXPORT
+// EXPORT SENTENCES
 // =====================
-async function exportSentences() {
-    await Word.run(async (context) => {
-        const body = context.document.body;
-        body.load("text");
-        await context.sync();
+async function exportAllSentences() {
+    if (exporting) return;
 
-        const text = body.text;
-        if (!text || !text.trim()) {
-            alert("Document is empty.");
-            return;
-        }
+    exporting = true;
+    const btn = document.getElementById("export-btn");
+    setButtonState(btn, true);
 
-        const sentences = text
-            .replace(/\r?\n+/g, " ")
-            .split(/(?<=[.!?])\s+(?=.)/)
-            .map(s => s.trim())
-            .filter(Boolean);
+    try {
+        await Word.run(async (context) => {
+            const body = context.document.body;
+            body.load("text");
+            await context.sync();
 
-        const results = [];
+            const text = body.text.trim();
+            if (!text) return alert("Document is empty.");
 
-        for (const sentence of sentences) {
-            try {
-                // 🧪 MOCK MODE
-                if (useMockSuggestions) {
-                    results.push(getMockSuggestion(sentence));
-                    continue;
+            const sentences = text
+                .replace(/\r?\n+/g, " ")
+                .split(/(?<=[.!?])\s+(?=.)/)
+                .map(s => s.trim())
+                .filter(Boolean);
+
+            const results = [];
+            for (const sentence of sentences) {
+                try {
+                    const result = useMockSuggestions 
+                        ? getMockSuggestion(sentence) 
+                        : await fetchSuggestion(sentence);
+                    if (result) results.push(result);
+                } catch (err) {
+                    console.error(err);
                 }
-
-                // 🌐 REAL API
-                const response = await fetch("http://127.0.0.1:5000/prompt", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ sentence })
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-
-                    data.simplified.sentence = data.simplified.sentence
-                        .replace(/\[\[\s*##\s*completed\s*##\s*\]\]/gi, "")
-                        .trim();
-
-                    // 🔥 store original AI suggestion (for undo after modify)
-                    data.simplified.originalSentence = data.simplified.sentence;
-
-                    results.push(data);
-                }
-
-            } catch (err) {
-                console.error(err);
             }
-        }
 
+            displayResults(results);
+        });
+    } finally {
+        exporting = false;
+        setButtonState(btn, false);
+    }
+}
 
-        displayResults(results);
+function setButtonState(button, disabled) {
+    button.disabled = disabled;
+    button.style.opacity = disabled ? 0.5 : 1;
+    button.style.cursor = disabled ? "not-allowed" : "pointer";
+}
+
+async function fetchSuggestion(sentence) {
+    const response = await fetch("http://127.0.0.1:5000/prompt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sentence })
     });
+
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    data.simplified.sentence = data.simplified.sentence
+        .replace(/\[\[\s*##\s*completed\s*##\s*\]\]/gi, "")
+        .trim();
+
+    data.simplified.originalSentence = data.simplified.sentence;
+    return data;
 }
 
 // =====================
 // DISPLAY + PAGINATION
 // =====================
 function displayResults(results) {
-    const container = document.getElementById("results");
-    container.innerHTML = "";
-    currentPage = 1;
-
     paginatedResults = results.filter(item =>
         item.simplified.lint_score >= 36.18 &&
         item.simplified.lint_score <= 50.07
     );
 
-    if (paginatedResults.length === 0) {
-        container.innerHTML =
-            "De brief is op B1-niveau!<br><br>U dient de brief zelf kritisch na te lezen.";
+    const container = document.getElementById("results");
+    container.innerHTML = "";
+
+    if (!paginatedResults.length) {
+        container.innerHTML = "De brief is op B1-niveau!<br><br>U dient de brief zelf kritisch na te lezen.";
         return;
     }
 
-    renderPaginationControls(container);
+    currentPage = 1;
+    renderPagination(container);
     renderCurrentPage();
 }
 
-function renderPaginationControls(container) {
+function renderPagination(container) {
     const div = document.createElement("div");
     div.id = "pagination";
-
     div.innerHTML = `
         <button id="prev-page">← Vorige</button>
         <span id="page-info"></span>
         <button id="next-page">Volgende →</button>
     `;
-
     container.appendChild(div);
 
     document.getElementById("prev-page").onclick = () => {
@@ -157,8 +143,8 @@ function renderPaginationControls(container) {
     };
 
     document.getElementById("next-page").onclick = () => {
-        const max = Math.ceil(paginatedResults.length / pageSize);
-        if (currentPage < max) {
+        const maxPage = Math.ceil(paginatedResults.length / pageSize);
+        if (currentPage < maxPage) {
             currentPage++;
             renderCurrentPage();
         }
@@ -167,7 +153,6 @@ function renderPaginationControls(container) {
 
 function renderCurrentPage() {
     const container = document.getElementById("results");
-
     container.querySelectorAll(".result-card").forEach(e => e.remove());
 
     const start = (currentPage - 1) * pageSize;
@@ -176,20 +161,13 @@ function renderCurrentPage() {
     pageItems.forEach(item => createSuggestionCard(item, container));
 
     const maxPage = Math.ceil(paginatedResults.length / pageSize);
-    document.getElementById("page-info").textContent =
-        `${currentPage} van ${maxPage}`;
-
+    document.getElementById("page-info").textContent = `${currentPage} van ${maxPage}`;
     document.getElementById("prev-page").disabled = currentPage === 1;
     document.getElementById("next-page").disabled = currentPage === maxPage;
 
-    // 🔥 NEW: automatically highlight the current suggestion in Word
-    if (pageItems.length === 1) {
-        highlightInWord(pageItems[0].original.sentence);
-    } else {
-        clearSelectionInWord();
-    }
+    if (pageItems.length === 1) highlightInWord(pageItems[0].original.sentence);
+    else clearSelectionInWord();
 }
-
 
 // =====================
 // CARD
@@ -198,18 +176,36 @@ function createSuggestionCard(item, container) {
     const div = document.createElement("div");
     div.className = "result-card";
 
+    // Only show lint score if available
+    const lintScoreSimpHtml = item.simplified.lint_score != null
+        ? `<div class="lint-score">Lint score: ${item.simplified.lint_score.toFixed(2)}</div>`
+        : "";
+
+            // Only show lint score if available
+    const lintScoreOrgiHtml = item.original.lint_score != null
+        ? `<div class="lint-score">Lint score: ${item.original.lint_score.toFixed(2)}</div>`
+        : "";
+
     div.innerHTML = `
         <div class="sentence-block original-block">
-            <strong class="no-break">Originele zin</strong>
+            <strong>Originele zin</strong>
             <div>${item.original.sentence}</div>
+            ${lintScoreOrgiHtml}
         </div>
 
-        <div class="sentence-block suggestion-block">
-            <strong class="no-break">AI-suggestie</strong>
-            <div class="suggestion-text" contenteditable="false">
-                ${item.simplified.sentence}
-            </div>
+        <div class="sentence-block suggestion-block" style="position: relative;">
+            <button class="refresh-btn" style="
+                position: absolute;
+                top: 4px;
+                right: 4px;
+                font-size: 0.8em;
+                padding: 2px 6px;
+                cursor: pointer;
+            ">Nieuwe suggestie ↻</button>
 
+            <strong>AI-suggestie</strong>
+            <div class="suggestion-text" contenteditable="false">${item.simplified.sentence}</div>
+            ${lintScoreSimpHtml}
             <div class="action-row" style="margin-top:12px;">
                 <button class="accept-btn">Accepteren</button>
                 <button class="modify-btn">Aanpassen</button>
@@ -218,101 +214,138 @@ function createSuggestionCard(item, container) {
         </div>
     `;
 
-    const suggestionTextDiv = div.querySelector(".suggestion-text");
-    const acceptBtn = div.querySelector(".accept-btn");
-    const modifyBtn = div.querySelector(".modify-btn");
-    const denyBtn = div.querySelector(".deny-btn");
 
-    acceptBtn.onclick = async () => {
-        await replaceInWord(item.simplified.sentence, item.original.sentence);
+    container.appendChild(div);
 
-        undoStack.push({
-            type: "replace",
-            item,
-            previousText: item.original.sentence,
-            appliedText: item.simplified.sentence,
-            pageIndex: paginatedResults.indexOf(item)
-        });
-
-        removeItemFromPagination(item);
+    const buttons = {
+        accept: div.querySelector(".accept-btn"),
+        modify: div.querySelector(".modify-btn"),
+        deny: div.querySelector(".deny-btn"),
+        refresh: div.querySelector(".refresh-btn")
     };
 
-    modifyBtn.onclick = () => {
-        // Re-query elements inside this card (safe)
-        const currentSuggestionDiv = div.querySelector(".suggestion-text");
-        const acceptBtn = div.querySelector(".accept-btn");
-        const modifyBtn = div.querySelector(".modify-btn");
-        const denyBtn = div.querySelector(".deny-btn");
 
-        const beforeEdit = item.simplified.sentence;
+    buttons.refresh.onclick = async () => {
+        buttons.refresh.disabled = true;
+        buttons.refresh.textContent = "Bezig…";
 
-        const textarea = document.createElement("textarea");
-        textarea.value = beforeEdit;
-        textarea.style.width = "100%";
-        textarea.rows = 4;
+        try {
+            const newSuggestion = useMockSuggestions
+                ? getMockSuggestion(item.original.sentence)
+                : await fetchSuggestion(item.original.sentence);
 
-        currentSuggestionDiv.replaceWith(textarea);
+            if (newSuggestion) {
+                // Save old sentence for undo
+                undoStack.push({
+                    type: "modify",
+                    item,
+                    previousSentence: item.simplified.sentence,
+                    pageIndex: paginatedResults.indexOf(item)
+                });
 
-        acceptBtn.style.display = "none";
-        modifyBtn.style.display = "none";
-        denyBtn.style.display = "none";
+                // Update the item
+                item.simplified = newSuggestion.simplified;
 
-        const saveBtn = document.createElement("button");
-        saveBtn.textContent = "Opslaan";
+                // Update card view
+                const suggestionDiv = div.querySelector(".suggestion-text");
+                suggestionDiv.textContent = item.simplified.sentence;
 
-        const cancelBtn = document.createElement("button");
-        cancelBtn.textContent = "Annuleren";
+                // ✅ Update lint score if available
+                const lintDiv = div.querySelector(".sentence-block.suggestion-block .lint-score");
+                if (lintDiv) {
+                    lintDiv.textContent = `Lint score: ${item.simplified.lint_score.toFixed(2)}`;
+                }
 
-        const buttonRow = document.createElement("div");
-        buttonRow.style.marginTop = "12px";
-        buttonRow.append(saveBtn, cancelBtn);
-
-        textarea.after(buttonRow);
-
-        saveBtn.onclick = () => {
-            const newText = textarea.value.trim();
-            if (!newText) return;
-
-            undoStack.push({
-                type: "modify",
-                item,
-                previousSentence: beforeEdit,
-                pageIndex: paginatedResults.indexOf(item)
-            });
-
-            item.simplified.sentence = newText;
-            restoreView();
-        };
-
-        cancelBtn.onclick = restoreView;
-
-        function restoreView() {
-            const restoredDiv = document.createElement("div");
-            restoredDiv.className = "suggestion-text";
-            restoredDiv.contentEditable = false;
-            restoredDiv.textContent = item.simplified.sentence;
-
-            textarea.replaceWith(restoredDiv);
-            buttonRow.remove();
-
-            // Re-query buttons again to ensure correct DOM references
-            const acceptBtn = div.querySelector(".accept-btn");
-            const modifyBtn = div.querySelector(".modify-btn");
-            const denyBtn = div.querySelector(".deny-btn");
-
-            acceptBtn.style.display = "";
-            modifyBtn.style.display = "";
-            denyBtn.style.display = "";
-
-            updateUndoButtonState();
+                updateUndoButtonState();
+            }
+        } catch (err) {
+            console.error(err);
+        } finally {
+            buttons.refresh.disabled = false;
+            buttons.refresh.textContent = "Nieuwe suggestie ↻";
         }
     };
 
 
-    container.appendChild(div);
+
+    buttons.accept.onclick = () => applySuggestion(item, item.simplified.sentence);
+    buttons.deny.onclick = () => removeItemFromPagination(item);
+    buttons.modify.onclick = () => enableModify(item, div);
+
+    buttons.deny.onclick = () => {
+    // Push undo info so we can restore the denied item
+    undoStack.push({
+        type: "deny",
+        item,
+        pageIndex: paginatedResults.indexOf(item)
+    });
+
+    removeItemFromPagination(item);
+    updateUndoButtonState();
+};
+
 }
 
+// =====================
+// MODIFY
+// =====================
+function enableModify(item, cardDiv) {
+    const suggestionDiv = cardDiv.querySelector(".suggestion-text");
+    const oldText = item.simplified.sentence;
 
+    const textarea = document.createElement("textarea");
+    textarea.value = oldText;
+    textarea.style.width = "100%";
+    textarea.rows = 4;
+    suggestionDiv.replaceWith(textarea);
+
+    const buttonRow = document.createElement("div");
+    buttonRow.style.marginTop = "12px";
+
+    const saveBtn = document.createElement("button");
+    saveBtn.textContent = "Opslaan";
+    const cancelBtn = document.createElement("button");
+    cancelBtn.textContent = "Annuleren";
+    buttonRow.append(saveBtn, cancelBtn);
+    textarea.after(buttonRow);
+
+    toggleCardButtons(cardDiv, false);
+
+    saveBtn.onclick = () => {
+        const newText = textarea.value.trim();
+        if (!newText) return;
+
+        undoStack.push({ type: "modify", item, previousSentence: oldText, pageIndex: paginatedResults.indexOf(item) });
+        item.simplified.sentence = newText;
+        restoreCardView(cardDiv, item);
+    };
+
+    cancelBtn.onclick = () => restoreCardView(cardDiv, item);
+}
+
+function restoreCardView(cardDiv, item) {
+    const newDiv = document.createElement("div");
+    newDiv.className = "suggestion-text";
+    newDiv.contentEditable = false;
+    newDiv.textContent = item.simplified.sentence;
+
+    const textarea = cardDiv.querySelector("textarea");
+    const buttonRow = textarea.nextElementSibling;
+    textarea.replaceWith(newDiv);
+    buttonRow.remove();
+
+    toggleCardButtons(cardDiv, true);
+    updateUndoButtonState();
+}
+
+function toggleCardButtons(cardDiv, enabled) {
+    cardDiv.querySelectorAll(".accept-btn, .modify-btn, .deny-btn")
+        .forEach(btn => btn.style.display = enabled ? "" : "none");
+}
+
+// =====================
+// APPLY SUGGESTION
+// =====================
 async function applySuggestion(item, textToApply) {
     const originalSuggestion = item.simplified.originalSentence ?? item.simplified.sentence;
 
@@ -323,55 +356,50 @@ async function applySuggestion(item, textToApply) {
         item,
         previousText: item.original.sentence,
         appliedText: textToApply,
-        originalSuggestion,           // 🔥 track AI version
+        originalSuggestion,
         pageIndex: paginatedResults.indexOf(item)
     });
 
     removeItemFromPagination(item);
 }
 
-
-
-
 // =====================
 // UNDO
 // =====================
 function setupUndoButton() {
     const btn = document.getElementById("undo-btn");
-
     btn.onclick = async () => {
-        if (undoStack.length === 0) return;
-
+        if (!undoStack.length) return;
         const last = undoStack.pop();
 
-        // undo ACCEPT
         if (last.type === "replace") {
             await replaceInWord(last.previousText, last.appliedText);
             await highlightInWord(last.previousText);
-
             paginatedResults.splice(last.pageIndex, 0, last.item);
             currentPage = last.pageIndex + 1;
         }
 
-        // undo MODIFY
         if (last.type === "modify") {
             last.item.simplified.sentence = last.previousSentence;
             currentPage = last.pageIndex + 1;
         }
 
+        if (last.type === "deny") {
+            // Restore the denied item in paginatedResults
+            paginatedResults.splice(last.pageIndex, 0, last.item);
+            currentPage = last.pageIndex + 1;
+        }
+
+
         renderCurrentPage();
         updateUndoButtonState();
     };
 
-
-
     updateUndoButtonState();
 }
 
-
 function updateUndoButtonState() {
-    const btn = document.getElementById("undo-btn");
-    btn.disabled = undoStack.length === 0;
+    document.getElementById("undo-btn").disabled = undoStack.length === 0;
 }
 
 // =====================
@@ -383,10 +411,7 @@ async function replaceInWord(newText, oldText) {
         const results = context.document.body.search(search);
         results.load("items");
         await context.sync();
-
-        if (results.items.length > 0) {
-            results.items[0].insertText(newText, Word.InsertLocation.replace);
-        }
+        if (results.items.length > 0) results.items[0].insertText(newText, Word.InsertLocation.replace);
         await context.sync();
     });
 }
@@ -397,49 +422,41 @@ async function highlightInWord(text) {
         const results = context.document.body.search(search);
         results.load("items");
         await context.sync();
-
-        if (results.items.length > 0) {
-            results.items[0].select();
-        }
+        if (results.items.length > 0) results.items[0].select();
         await context.sync();
     });
 }
 
 async function clearSelectionInWord() {
-    await Word.run(async (context) => {
+    await Word.run(async context => {
         context.document.getSelection().select(Word.SelectionMode.end);
         await context.sync();
     });
 }
 
-// --
-
+// =====================
+// PAGINATION HELPERS
+// =====================
 function removeItemFromPagination(item) {
     const index = paginatedResults.indexOf(item);
-    if (index !== -1) {
-        paginatedResults.splice(index, 1);
-    }
+    if (index !== -1) paginatedResults.splice(index, 1);
 
     const container = document.getElementById("results");
-
-    // 🔥 NEW: no suggestions left → show B1 message
-    if (paginatedResults.length === 0) {
-        container.innerHTML =
-            "De brief is op B1-niveau!<br><br>U dient de brief zelf kritisch na te lezen.";
-
+    if (!paginatedResults.length) {
+        container.innerHTML = "De brief is op B1-niveau!<br><br>U dient de brief zelf kritisch na te lezen.";
         clearSelectionInWord();
         updateUndoButtonState();
         return;
     }
 
-    const maxPage = Math.ceil(paginatedResults.length / pageSize);
-    currentPage = Math.min(currentPage, maxPage);
-
+    currentPage = Math.min(currentPage, Math.ceil(paginatedResults.length / pageSize));
     renderCurrentPage();
     updateUndoButtonState();
 }
 
-
+// =====================
+// MOCK
+// =====================
 function getMockSuggestion(sentence) {
     const simplified = sentence
         .replace(/,/g, "")
@@ -451,9 +468,8 @@ function getMockSuggestion(sentence) {
         original: { sentence },
         simplified: {
             sentence: simplified,
-            originalSentence: simplified, // 🔥 keep pristine copy
+            originalSentence: simplified,
             lint_score: 42
         }
     };
 }
-
