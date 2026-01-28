@@ -6,7 +6,7 @@
 let improvementMethod = "b1";
 let showLintScores = true;
 
-let useMockSuggestions = false;
+let useMockSuggestions = true;
 
 // Pagination
 let currentPage = 1;
@@ -42,6 +42,8 @@ async function exportAllSentences() {
 
     exporting = true;
     const btn = document.getElementById("export-btn");
+
+    disableAllButtons([btn]); 
     setButtonState(btn, true);
 
     try {
@@ -50,34 +52,36 @@ async function exportAllSentences() {
             body.load("text");
             await context.sync();
 
-            const text = body.text.trim();
-            if (!text) return alert("Document is empty.");
-
-            const sentences = text
-                .replace(/\r?\n+/g, " ")
-                .split(/(?<=[.!?])\s+(?=.)/)
-                .map(s => s.trim())
-                .filter(Boolean);
-
+            // Split document into sentences
+            const sentences = body.text.split(/(?<=[.!?])\s+/);
             const results = [];
+
             for (const sentence of sentences) {
-                try {
-                    const result = useMockSuggestions 
-                        ? getMockSuggestion(sentence) 
-                        : await fetchSuggestion(sentence);
-                    if (result) results.push(result);
-                } catch (err) {
-                    console.error(err);
+                const suggestion = useMockSuggestions
+                    ? getMockSuggestion(sentence)
+                    : await fetchSuggestion(sentence);
+
+                if (suggestion) {
+                    results.push({
+                        original: suggestion.original,
+                        simplified: suggestion.simplified
+                    });
                 }
             }
 
+            // Display suggestions in the UI
             displayResults(results);
         });
+    } catch (err) {
+        console.error(err);
     } finally {
         exporting = false;
         setButtonState(btn, false);
+        enableAllButtons(); 
     }
 }
+
+
 
 function setButtonState(button, disabled) {
     button.disabled = disabled;
@@ -100,8 +104,15 @@ async function fetchSuggestion(sentence) {
         .trim();
 
     data.simplified.originalSentence = data.simplified.sentence;
+
+    // Add lint_score to original
+    data.original = data.original || {};
+    data.original.sentence = sentence;
+    data.original.lint_score = data.original.lint_score ?? data.simplified.lint_score;
+
     return data;
 }
+
 
 // =====================
 // DISPLAY + PAGINATION
@@ -126,30 +137,35 @@ function displayResults(results) {
 }
 
 function renderPagination(container) {
-    const div = document.createElement("div");
-    div.id = "pagination";
-    div.innerHTML = `
-        <button id="prev-page">← Vorige</button>
-        <span id="page-info"></span>
-        <button id="next-page">Volgende →</button>
-    `;
-    container.appendChild(div);
+    // Check if pagination already exists
+    let div = document.getElementById("pagination");
+    if (!div) {
+        div = document.createElement("div");
+        div.id = "pagination";
+        div.innerHTML = `
+            <button id="prev-page">← Vorige</button>
+            <span id="page-info"></span>
+            <button id="next-page">Volgende →</button>
+        `;
+        container.appendChild(div);
 
-    document.getElementById("prev-page").onclick = () => {
-        if (currentPage > 1) {
-            currentPage--;
-            renderCurrentPage();
-        }
-    };
+        document.getElementById("prev-page").onclick = () => {
+            if (currentPage > 1) {
+                currentPage--;
+                renderCurrentPage();
+            }
+        };
 
-    document.getElementById("next-page").onclick = () => {
-        const maxPage = Math.ceil(paginatedResults.length / pageSize);
-        if (currentPage < maxPage) {
-            currentPage++;
-            renderCurrentPage();
-        }
-    };
+        document.getElementById("next-page").onclick = () => {
+            const maxPage = Math.ceil(paginatedResults.length / pageSize);
+            if (currentPage < maxPage) {
+                currentPage++;
+                renderCurrentPage();
+            }
+        };
+    }
 }
+
 
 function renderCurrentPage() {
     const container = document.getElementById("results");
@@ -226,6 +242,9 @@ function createSuggestionCard(item, container) {
 
 
     buttons.refresh.onclick = async () => {
+        // Disable all buttons except this refresh
+        disableAllButtons([buttons.refresh]);
+
         buttons.refresh.disabled = true;
         buttons.refresh.textContent = "Bezig…";
 
@@ -235,7 +254,6 @@ function createSuggestionCard(item, container) {
                 : await fetchSuggestion(item.original.sentence);
 
             if (newSuggestion) {
-                // Save old sentence for undo
                 undoStack.push({
                     type: "modify",
                     item,
@@ -243,14 +261,11 @@ function createSuggestionCard(item, container) {
                     pageIndex: paginatedResults.indexOf(item)
                 });
 
-                // Update the item
                 item.simplified = newSuggestion.simplified;
 
-                // Update card view
                 const suggestionDiv = div.querySelector(".suggestion-text");
                 suggestionDiv.textContent = item.simplified.sentence;
 
-                // ✅ Update lint score if available
                 const lintDiv = div.querySelector(".sentence-block.suggestion-block .lint-score");
                 if (lintDiv) {
                     lintDiv.textContent = `Lint score: ${item.simplified.lint_score.toFixed(2)}`;
@@ -263,8 +278,10 @@ function createSuggestionCard(item, container) {
         } finally {
             buttons.refresh.disabled = false;
             buttons.refresh.textContent = "Nieuwe suggestie ↻";
+            enableAllButtons(); // re-enable all buttons
         }
     };
+
 
 
 
@@ -301,15 +318,25 @@ function enableModify(item, cardDiv) {
 
     const buttonRow = document.createElement("div");
     buttonRow.style.marginTop = "12px";
+    buttonRow.style.display = "flex";             // make it flex
+    buttonRow.style.justifyContent = "space-between"; // push buttons to opposite ends
+
 
     const saveBtn = document.createElement("button");
+    saveBtn.className = "save-btn";
     saveBtn.textContent = "Opslaan";
+
     const cancelBtn = document.createElement("button");
+    cancelBtn.className = "cancel-btn";
     cancelBtn.textContent = "Annuleren";
+
     buttonRow.append(saveBtn, cancelBtn);
     textarea.after(buttonRow);
 
+
     toggleCardButtons(cardDiv, false);
+    disableAllButtons([]); // disable everything
+
 
     saveBtn.onclick = () => {
         const newText = textarea.value.trim();
@@ -318,9 +345,15 @@ function enableModify(item, cardDiv) {
         undoStack.push({ type: "modify", item, previousSentence: oldText, pageIndex: paginatedResults.indexOf(item) });
         item.simplified.sentence = newText;
         restoreCardView(cardDiv, item);
+
+        
+        enableAllButtons(); // re-enable everything
     };
 
-    cancelBtn.onclick = () => restoreCardView(cardDiv, item);
+    cancelBtn.onclick = () => {
+        restoreCardView(cardDiv, item);
+        enableAllButtons(); // re-enable everything
+    };
 }
 
 function restoreCardView(cardDiv, item) {
@@ -336,6 +369,8 @@ function restoreCardView(cardDiv, item) {
 
     toggleCardButtons(cardDiv, true);
     updateUndoButtonState();
+    updatePaginationButtons(); // <-- add this line
+
 }
 
 function toggleCardButtons(cardDiv, enabled) {
@@ -465,11 +500,67 @@ function getMockSuggestion(sentence) {
         .trim() + ".";
 
     return {
-        original: { sentence },
+        original: {
+            sentence,
+            lint_score: 50 // or some realistic original lint score
+        },
         simplified: {
             sentence: simplified,
             originalSentence: simplified,
             lint_score: 42
         }
     };
+}
+
+
+function disableAllButtons(except = []) {
+    const btnSelectors = [
+        "#export-btn",
+        "#undo-btn",
+        "#prev-page",
+        "#next-page",
+        ".accept-btn",
+        ".modify-btn",
+        ".deny-btn",
+        ".refresh-btn"
+    ];
+
+    btnSelectors.forEach(selector => {
+        const buttons = document.querySelectorAll(selector);
+        buttons.forEach(btn => {
+            if (!except.includes(btn)) {
+                btn.disabled = true;
+                btn.style.opacity = 0.5;
+                btn.style.cursor = "not-allowed";
+            }
+        });
+    });
+}
+
+function enableAllButtons() {
+    const btnSelectors = [
+        "#export-btn",
+        "#undo-btn",
+        "#prev-page",
+        "#next-page",
+        ".accept-btn",
+        ".modify-btn",
+        ".deny-btn",
+        ".refresh-btn"
+    ];
+
+    btnSelectors.forEach(selector => {
+        const buttons = document.querySelectorAll(selector);
+        buttons.forEach(btn => {
+            btn.disabled = false;
+            btn.style.opacity = 1;
+            btn.style.cursor = "pointer";
+        });
+    });
+}
+
+function updatePaginationButtons() {
+    const maxPage = Math.ceil(paginatedResults.length / pageSize);
+    document.getElementById("prev-page").disabled = currentPage === 1;
+    document.getElementById("next-page").disabled = currentPage === maxPage;
 }
