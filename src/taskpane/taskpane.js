@@ -6,7 +6,7 @@
 let improvementMethod = "b1";
 let showLintScores = true;
 
-let useMockSuggestions = true;
+let useMockSuggestions = false;
 
 // Pagination
 let currentPage = 1;
@@ -217,6 +217,8 @@ function createSuggestionCard(item, container) {
                 font-size: 0.8em;
                 padding: 2px 6px;
                 cursor: pointer;
+                border: none;
+                outline: none;
             ">Nieuwe suggestie ↻</button>
 
             <strong>AI-suggestie</strong>
