@@ -4,8 +4,9 @@
 // CONFIG
 // =====================
 let improvementMethod = "better"; // "b1" or "better"
-let showLintScores = true;
+let showLintScores = false; // true or false
 
+// Debugging
 let useMockSuggestions = false;
 
 // Pagination
@@ -218,14 +219,16 @@ function createSuggestionCard(item, container) {
     div.className = "result-card";
 
     // Only show lint score if available
-    const lintScoreSimpHtml = item.simplified.lint_score != null
-        ? `<div class="lint-score">Lint score: ${item.simplified.lint_score.toFixed(2)}</div>`
-        : "";
+    const lintScoreSimpHtml =
+        showLintScores && item.simplified.lint_score != null
+            ? `<div class="lint-score">Lint score: ${item.simplified.lint_score.toFixed(2)}</div>`
+            : "";
 
-            // Only show lint score if available
-    const lintScoreOrgiHtml = item.original.lint_score != null
-        ? `<div class="lint-score">Lint score: ${item.original.lint_score.toFixed(2)}</div>`
-        : "";
+    const lintScoreOrgiHtml =
+        showLintScores && item.original.lint_score != null
+            ? `<div class="lint-score">Lint score: ${item.original.lint_score.toFixed(2)}</div>`
+            : "";
+
 
     div.innerHTML = `
         <div class="sentence-block original-block">
