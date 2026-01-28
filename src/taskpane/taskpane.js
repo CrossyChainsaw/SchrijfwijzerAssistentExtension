@@ -215,64 +215,103 @@ function createSuggestionCard(item, container) {
                 <button class="modify-btn">Aanpassen</button>
                 <button class="deny-btn">Weigeren</button>
             </div>
-
-            <div class="edit-row" style="margin-top:12px; display:none;">
-                <button class="save-btn">Opslaan</button>
-                <button class="cancel-btn">Annuleren</button>
-            </div>
         </div>
     `;
 
-    const suggestionEl = div.querySelector(".suggestion-text");
-    const actionRow = div.querySelector(".action-row");
-    const editRow = div.querySelector(".edit-row");
+    const suggestionTextDiv = div.querySelector(".suggestion-text");
+    const acceptBtn = div.querySelector(".accept-btn");
+    const modifyBtn = div.querySelector(".modify-btn");
+    const denyBtn = div.querySelector(".deny-btn");
 
-    const originalSuggestion = item.simplified.sentence;
+    acceptBtn.onclick = async () => {
+        await replaceInWord(item.simplified.sentence, item.original.sentence);
 
-    // ✅ ACCEPT
-    div.querySelector(".accept-btn").onclick = async () => {
-        await applySuggestion(item, suggestionEl.innerText);
-    };
-
-    // ✏️ MODIFY
-    div.querySelector(".modify-btn").onclick = () => {
-        suggestionEl.contentEditable = "true";
-        suggestionEl.focus();
-
-        actionRow.style.display = "none";
-        editRow.style.display = "block";
-    };
-
-    // 💾 SAVE
-    div.querySelector(".save-btn").onclick = async () => {
-        const newText = suggestionEl.innerText.trim();
-
-        item.simplified.sentence = newText;
-        await applySuggestion(item, newText);
-    };
-
-    // ❌ CANCEL
-    div.querySelector(".cancel-btn").onclick = () => {
-        suggestionEl.innerText = originalSuggestion;
-        suggestionEl.contentEditable = "false";
-
-        editRow.style.display = "none";
-        actionRow.style.display = "block";
-    };
-
-    // 🚫 DENY
-    div.querySelector(".deny-btn").onclick = () => {
         undoStack.push({
-            type: "deny",
+            type: "replace",
             item,
+            previousText: item.original.sentence,
+            appliedText: item.simplified.sentence,
             pageIndex: paginatedResults.indexOf(item)
         });
 
         removeItemFromPagination(item);
     };
 
+    modifyBtn.onclick = () => {
+        // Re-query elements inside this card (safe)
+        const currentSuggestionDiv = div.querySelector(".suggestion-text");
+        const acceptBtn = div.querySelector(".accept-btn");
+        const modifyBtn = div.querySelector(".modify-btn");
+        const denyBtn = div.querySelector(".deny-btn");
+
+        const beforeEdit = item.simplified.sentence;
+
+        const textarea = document.createElement("textarea");
+        textarea.value = beforeEdit;
+        textarea.style.width = "100%";
+        textarea.rows = 4;
+
+        currentSuggestionDiv.replaceWith(textarea);
+
+        acceptBtn.style.display = "none";
+        modifyBtn.style.display = "none";
+        denyBtn.style.display = "none";
+
+        const saveBtn = document.createElement("button");
+        saveBtn.textContent = "Opslaan";
+
+        const cancelBtn = document.createElement("button");
+        cancelBtn.textContent = "Annuleren";
+
+        const buttonRow = document.createElement("div");
+        buttonRow.style.marginTop = "12px";
+        buttonRow.append(saveBtn, cancelBtn);
+
+        textarea.after(buttonRow);
+
+        saveBtn.onclick = () => {
+            const newText = textarea.value.trim();
+            if (!newText) return;
+
+            undoStack.push({
+                type: "modify",
+                item,
+                previousSentence: beforeEdit,
+                pageIndex: paginatedResults.indexOf(item)
+            });
+
+            item.simplified.sentence = newText;
+            restoreView();
+        };
+
+        cancelBtn.onclick = restoreView;
+
+        function restoreView() {
+            const restoredDiv = document.createElement("div");
+            restoredDiv.className = "suggestion-text";
+            restoredDiv.contentEditable = false;
+            restoredDiv.textContent = item.simplified.sentence;
+
+            textarea.replaceWith(restoredDiv);
+            buttonRow.remove();
+
+            // Re-query buttons again to ensure correct DOM references
+            const acceptBtn = div.querySelector(".accept-btn");
+            const modifyBtn = div.querySelector(".modify-btn");
+            const denyBtn = div.querySelector(".deny-btn");
+
+            acceptBtn.style.display = "";
+            modifyBtn.style.display = "";
+            denyBtn.style.display = "";
+
+            updateUndoButtonState();
+        }
+    };
+
+
     container.appendChild(div);
 }
+
 
 async function applySuggestion(item, textToApply) {
     const originalSuggestion = item.simplified.originalSentence ?? item.simplified.sentence;
@@ -305,24 +344,25 @@ function setupUndoButton() {
 
         const last = undoStack.pop();
 
-        // Restore Word text
+        // undo ACCEPT
         if (last.type === "replace") {
             await replaceInWord(last.previousText, last.appliedText);
             await highlightInWord(last.previousText);
 
-            // 🔥 restore ORIGINAL AI suggestion
-            last.item.simplified.sentence = last.originalSuggestion;
+            paginatedResults.splice(last.pageIndex, 0, last.item);
+            currentPage = last.pageIndex + 1;
         }
 
-        // Restore suggestion into pagination
-        if (typeof last.pageIndex === "number") {
-            paginatedResults.splice(last.pageIndex, 0, last.item);
+        // undo MODIFY
+        if (last.type === "modify") {
+            last.item.simplified.sentence = last.previousSentence;
             currentPage = last.pageIndex + 1;
         }
 
         renderCurrentPage();
         updateUndoButtonState();
     };
+
 
 
     updateUndoButtonState();
