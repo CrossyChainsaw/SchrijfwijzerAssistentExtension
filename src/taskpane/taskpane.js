@@ -1,33 +1,46 @@
-// Demo Customization
-let improvementMethod = "b1"; // better/b1 (betere lint score of binnen B1 range (36.18-50.07)) 
-let showLintScores = false; // true/false (lint scores in UI)
-
-
-
 /* global Office, Word */
 
+// =====================
+// CONFIG
+// =====================
+// Demo settings
+let improvementMethod = "b1";
+let showLintScores = false;
+
+// Pagination
+let currentPage = 1;
+const pageSize = 1;
+let paginatedResults = [];
+
+// State
 let initialized = false;
 let exporting = false;
-let undoStack = []; // Stores { fullItem, appliedText }
+let undoStack = [];
 
+// Mock settings
+let useMockSuggestions = true;
+
+// =====================
+// OFFICE INIT
+// =====================
 Office.onReady(() => {
     if (initialized) return;
     initialized = true;
 
-    const btn = document.getElementById("export-btn");
-    btn.replaceWith(btn.cloneNode(true));
-    const newBtn = document.getElementById("export-btn");
+    const oldBtn = document.getElementById("export-btn");
+    const newBtn = oldBtn.cloneNode(true);
+    oldBtn.replaceWith(newBtn);
 
     newBtn.addEventListener("click", async () => {
         if (exporting) return;
-        exporting = true;
 
+        exporting = true;
         newBtn.disabled = true;
         newBtn.style.opacity = 0.5;
         newBtn.style.cursor = "not-allowed";
 
         try {
-            await exportSentences();
+            await exportSentences();   // waits for ALL sentences
         } finally {
             exporting = false;
             newBtn.disabled = false;
@@ -36,39 +49,13 @@ Office.onReady(() => {
         }
     });
 
-    // Setup Undo Button
-    const resultsContainer = document.getElementById("results");
-    setupUndoButton(resultsContainer);
+    setupUndoButton();
 });
 
-function setupUndoButton(container) {
-    const undoBtn = document.getElementById("undo-btn");
-    if (!undoBtn) return;
 
-    // Use a fresh clone to clear any old listeners
-    const newUndoBtn = undoBtn.cloneNode(true);
-    undoBtn.replaceWith(newUndoBtn);
-
-    newUndoBtn.addEventListener("click", async () => {
-        if (undoStack.length === 0) return;
-
-        const lastChange = undoStack.pop();
-
-        if (lastChange.type === "replace") {
-            await replaceInWord(lastChange.fullItem.original.sentence, lastChange.appliedText);
-            createSuggestionCard(lastChange.fullItem, container, true);
-        } 
-        else if (lastChange.type === "deny") {
-            createSuggestionCard(lastChange.fullItem, container, true);
-        }
-
-        updateUndoButtonState();
-    });
-
-    // CRITICAL: Force the state to be correct based on the stack
-    updateUndoButtonState();
-}
-
+// =====================
+// EXPORT
+// =====================
 async function exportSentences() {
     await Word.run(async (context) => {
         const body = context.document.body;
@@ -88,8 +75,16 @@ async function exportSentences() {
             .filter(Boolean);
 
         const results = [];
+
         for (const sentence of sentences) {
             try {
+                // 🧪 MOCK MODE
+                if (useMockSuggestions) {
+                    results.push(getMockSuggestion(sentence));
+                    continue;
+                }
+
+                // 🌐 REAL API
                 const response = await fetch("http://127.0.0.1:5000/prompt", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -98,224 +93,272 @@ async function exportSentences() {
 
                 if (response.ok) {
                     const data = await response.json();
-
-                    // CLEANING LOGIC: Remove the [[ ## completed ##]] tag if it exists
-                    // The regex /\[\[\s*##\s*completed\s*##\s*\]\]/gi handles variations in spacing
-                    if (data.simplified && data.simplified.sentence) {
-                        data.simplified.sentence = data.simplified.sentence
-                            .replace(/\[\[\s*##\s*completed\s*##\s*\]\]/gi, "")
-                            .trim();
-                    }
+                    data.simplified.sentence = data.simplified.sentence
+                        .replace(/\[\[\s*##\s*completed\s*##\s*\]\]/gi, "")
+                        .trim();
 
                     results.push(data);
                 }
             } catch (err) {
-                console.error(`Request failed for: ${sentence}`, err);
+                console.error(err);
             }
         }
+
 
         displayResults(results);
     });
 }
 
+// =====================
+// DISPLAY + PAGINATION
+// =====================
 function displayResults(results) {
     const container = document.getElementById("results");
     container.innerHTML = "";
-    let improvedResults = [];
+    currentPage = 1;
 
-    // simplified better than original
-    if (improvementMethod === "better") {
-        improvedResults = results.filter(item => 
-        item.simplified.lint_score >= 36.18 && item.simplified.lint_score <= 50.07
-        );
-    }
+    paginatedResults = results.filter(item =>
+        item.simplified.lint_score >= 36.18 &&
+        item.simplified.lint_score <= 50.07
+    );
 
-    // simplified between 36.18 and 50.07 (B1)
-    if (improvementMethod === "b1") {
-        improvedResults = results.filter(item => 
-        item.simplified.lint_score >= 36.18 && item.simplified.lint_score <= 50.07
-        );
-    }
-
-    if (improvedResults.length === 0) {
-        container.innerHTML = "De brief is op B1-niveau!<br><br>U dient de brief zelf kritisch na te lezen.";
+    if (paginatedResults.length === 0) {
+        container.innerHTML =
+            "De brief is op B1-niveau!<br><br>U dient de brief zelf kritisch na te lezen.";
         return;
     }
 
-    // Initialize Undo Button if it doesn't exist
-    setupUndoButton(container);
+    renderPaginationControls(container);
+    renderCurrentPage();
+}
 
-    // Create cards for each result
-    improvedResults.forEach(item => {
-        createSuggestionCard(item, container);
-    });
+function renderPaginationControls(container) {
+    const div = document.createElement("div");
+    div.id = "pagination";
+
+    div.innerHTML = `
+        <button id="prev-page">← Vorige</button>
+        <span id="page-info"></span>
+        <button id="next-page">Volgende →</button>
+    `;
+
+    container.appendChild(div);
+
+    document.getElementById("prev-page").onclick = () => {
+        if (currentPage > 1) {
+            currentPage--;
+            renderCurrentPage();
+        }
+    };
+
+    document.getElementById("next-page").onclick = () => {
+        const max = Math.ceil(paginatedResults.length / pageSize);
+        if (currentPage < max) {
+            currentPage++;
+            renderCurrentPage();
+        }
+    };
+}
+
+function renderCurrentPage() {
+    const container = document.getElementById("results");
+
+    container.querySelectorAll(".result-card").forEach(e => e.remove());
+
+    const start = (currentPage - 1) * pageSize;
+    const pageItems = paginatedResults.slice(start, start + pageSize);
+
+    pageItems.forEach(item => createSuggestionCard(item, container));
+
+    const maxPage = Math.ceil(paginatedResults.length / pageSize);
+    document.getElementById("page-info").textContent =
+        `${currentPage} van ${maxPage}`;
+
+    document.getElementById("prev-page").disabled = currentPage === 1;
+    document.getElementById("next-page").disabled = currentPage === maxPage;
+
+    // 🔥 NEW: automatically highlight the current suggestion in Word
+    if (pageItems.length === 1) {
+        highlightInWord(pageItems[0].original.sentence);
+    } else {
+        clearSelectionInWord();
+    }
+}
+
+
+// =====================
+// CARD
+// =====================
+function createSuggestionCard(item, container) {
+    const div = document.createElement("div");
+    div.className = "result-card";
+
+    div.innerHTML = `
+        <div class="sentence-block original-block">
+            <strong class="no-break">Originele zin</strong>
+            <div>${item.original.sentence}</div>
+        </div>
+
+        <div class="sentence-block suggestion-block">
+            <strong class="no-break">AI-suggestie</strong>
+            <div>${item.simplified.sentence}</div>
+
+            <div style="margin-top:12px;">
+                <button class="accept-btn">Accepteren</button>
+                <button class="modify-btn">Aanpassen</button>
+                <button class="deny-btn">Weigeren</button>
+            </div>
+        </div>
+
+    `;
+
+
+    div.querySelector(".accept-btn").onclick = async () => {
+        await replaceInWord(item.simplified.sentence, item.original.sentence);
+
+        undoStack.push({
+            type: "replace",
+            item,
+            previousText: item.original.sentence,
+            appliedText: item.simplified.sentence,
+            pageIndex: paginatedResults.indexOf(item)
+        });
+
+        removeItemFromPagination(item);
+    };
+
+
+    div.querySelector(".deny-btn").onclick = () => {
+        undoStack.push({
+            type: "deny",
+            item,
+            pageIndex: paginatedResults.indexOf(item)
+        });
+
+        removeItemFromPagination(item);
+    };
+
+
+    container.appendChild(div);
+}
+
+// =====================
+// UNDO
+// =====================
+function setupUndoButton() {
+    const btn = document.getElementById("undo-btn");
+
+    btn.onclick = async () => {
+        if (undoStack.length === 0) return;
+
+        const last = undoStack.pop();
+
+        // Restore Word text if needed and scroll to it
+        if (last.type === "replace") {
+            await replaceInWord(last.previousText, last.appliedText);
+
+            // Scroll Word to the restored text
+            await highlightInWord(last.previousText);
+        }
+
+
+        // Restore suggestion into pagination
+        if (typeof last.pageIndex === "number") {
+            paginatedResults.splice(last.pageIndex, 0, last.item);
+            currentPage = last.pageIndex + 1;
+        }
+
+        renderCurrentPage();
+        updateUndoButtonState();
+    };
 
     updateUndoButtonState();
 }
 
-function createSuggestionCard(item, container, prepend = false) {
-    const div = document.createElement("div");
-    div.className = "result-card";
-    div.style.border = "1px solid #ccc";
-    div.style.padding = "10px";
-    div.style.marginBottom = "10px";
-
-    div.innerHTML = `
-        <div><strong>Origineel:</strong> ${item.original.sentence}</div>
-        ${showLintScores ? `<div>Lint Score: ${item.original.lint_score}</div>` : ""}
-        <hr>
-        <div><strong>Suggestie:</strong> <span class="simplified-text">${item.simplified.sentence}</span></div>
-        ${showLintScores ? `<div>Lint Score: ${item.simplified.lint_score}</div>` : ""}
-        <div class="button-group" style="margin-top: 10px;">
-            <button class="accept-btn">Accepteren</button>
-            <button class="modify-btn">Aanpassen</button>
-            <button class="deny-btn">Weigeren</button>
-        </div>
-    `;
-
-    const acceptBtn = div.querySelector(".accept-btn");
-    const modifyBtn = div.querySelector(".modify-btn");
-    const denyBtn = div.querySelector(".deny-btn");
-
-    // ACCEPT LOGIC
-    acceptBtn.addEventListener("click", async () => {
-        const textToApply = item.simplified.sentence;
-        await replaceInWord(textToApply, item.original.sentence);
-
-        undoStack.push({ fullItem: item, appliedText: textToApply, type: "replace" });
-        updateUndoButtonState();
-        div.remove();
-    });
-
-
-    // DENY LOGIC
-    // Inside createSuggestionCard...
-    denyBtn.addEventListener("click", () => {
-        // Push to stack as a 'deny' type
-        undoStack.push({ 
-            fullItem: item, 
-            type: "deny" 
-        });
-        
-        updateUndoButtonState();
-        div.remove();
-    });
-
-    // MODIFY LOGIC
-    modifyBtn.addEventListener("click", () => {
-        const btnGroup = div.querySelector(".button-group");
-        btnGroup.style.display = "none";
-
-        const modifyDiv = document.createElement("div");
-        const input = document.createElement("input");
-        input.type = "text";
-        input.value = item.simplified.sentence;
-        input.style.width = "100%";
-
-        const saveBtn = document.createElement("button");
-        saveBtn.textContent = "Opslaan";
-        const cancelBtn = document.createElement("button");
-        cancelBtn.textContent = "Annuleren";
-
-        modifyDiv.append(input, saveBtn, cancelBtn);
-        div.appendChild(modifyDiv);
-
-        saveBtn.addEventListener("click", async () => {
-            const customText = input.value;
-
-            await replaceInWord(customText, item.original.sentence);
-
-            undoStack.push({ 
-                fullItem: item, 
-                appliedText: customText,
-                type: "replace" 
-            });
-
-            updateUndoButtonState();
-            div.remove();
-        });
-
-        cancelBtn.addEventListener("click", () => {
-            modifyDiv.remove();
-            btnGroup.style.display = "block";
-        });
-    });
-
-    // HOVER LOGIC: Highlight text in Word
-    div.addEventListener("mouseenter", async () => {
-        await highlightInWord(item.original.sentence);
-    });
-
-    // OPTIONAL: Clear selection when mouse leaves the card
-    div.addEventListener("mouseleave", async () => {
-        await clearSelectionInWord();
-    });
-
-    if (prepend) {
-        container.prepend(div);
-    } else {
-        container.appendChild(div);
-    }
-}
-
-async function replaceInWord(newText, oldText) {
-    await Word.run(async (context) => {
-        // Word Search API crashes if the string is > 255 characters
-        // We trim the search string if it's too long, but this can lead to 'not found'
-        // A better way is to use the first 50 and last 50 chars to find the range.
-        const searchString = oldText.length > 250 ? oldText.substring(0, 250) : oldText;
-
-        const results = context.document.body.search(searchString);
-        results.load("items");
-        await context.sync();
-
-        if (results.items.length > 0) {
-            // If the search was trimmed, we need to expand the selection to the full original sentence 
-            // but for simplicity here, we just replace what we found.
-            results.items[0].insertText(newText, Word.InsertLocation.replace);
-            await context.sync();
-        } else {
-            console.warn("Could not find the text in the document. It might have been manually changed.");
-        }
-    }).catch(error => {
-        console.error("Word Error: " + error.code + " - " + error.message);
-        if (error.code === "SearchStringInvalidOrTooLong") {
-            alert("This sentence is too long for Word to find automatically. Please replace it manually.");
-        }
-    });
-}
 
 function updateUndoButtonState() {
-    const undoBtn = document.getElementById("undo-btn");
-    if (!undoBtn) return;
-
-    const isEmpty = undoStack.length === 0;
-    undoBtn.disabled = isEmpty;
-    undoBtn.style.opacity = isEmpty ? 0.5 : 1;
-    undoBtn.style.cursor = isEmpty ? "not-allowed" : "pointer";
+    const btn = document.getElementById("undo-btn");
+    btn.disabled = undoStack.length === 0;
 }
 
-async function highlightInWord(textToFind) {
+// =====================
+// WORD HELPERS
+// =====================
+async function replaceInWord(newText, oldText) {
     await Word.run(async (context) => {
-        // Similar to your replace logic, handle the 255-char limit
-        const searchString = textToFind.length > 250 ? textToFind.substring(0, 250) : textToFind;
-        
-        const results = context.document.body.search(searchString);
+        const search = oldText.substring(0, 250);
+        const results = context.document.body.search(search);
         results.load("items");
         await context.sync();
 
         if (results.items.length > 0) {
-            results.items[0].select(); // This highlights the text in the document
-            await context.sync();
+            results.items[0].insertText(newText, Word.InsertLocation.replace);
         }
-    }).catch(err => console.error("Highlight error:", err));
+        await context.sync();
+    });
+}
+
+async function highlightInWord(text) {
+    await Word.run(async (context) => {
+        const search = text.substring(0, 250);
+        const results = context.document.body.search(search);
+        results.load("items");
+        await context.sync();
+
+        if (results.items.length > 0) {
+            results.items[0].select();
+        }
+        await context.sync();
+    });
 }
 
 async function clearSelectionInWord() {
     await Word.run(async (context) => {
-        // Deselecting usually means moving the cursor to the end of the current selection
-        const selection = context.document.getSelection();
-        selection.select(Word.SelectionMode.end); 
+        context.document.getSelection().select(Word.SelectionMode.end);
         await context.sync();
-    }).catch(err => console.error("Clear selection error:", err));
+    });
+}
+
+// --
+
+function removeItemFromPagination(item) {
+    const index = paginatedResults.indexOf(item);
+    if (index !== -1) {
+        paginatedResults.splice(index, 1);
+    }
+
+    const container = document.getElementById("results");
+
+    // 🔥 NEW: no suggestions left → show B1 message
+    if (paginatedResults.length === 0) {
+        container.innerHTML =
+            "De brief is op B1-niveau!<br><br>U dient de brief zelf kritisch na te lezen.";
+
+        clearSelectionInWord();
+        updateUndoButtonState();
+        return;
+    }
+
+    const maxPage = Math.ceil(paginatedResults.length / pageSize);
+    currentPage = Math.min(currentPage, maxPage);
+
+    renderCurrentPage();
+    updateUndoButtonState();
+}
+
+
+function getMockSuggestion(sentence) {
+    return {
+        original: {
+            sentence
+        },
+        simplified: {
+            sentence: sentence
+                .replace(/,/g, "")
+                .replace(/\b(daarom|echter|desondanks)\b/gi, "omdat")
+                .replace(/\s+/g, " ")
+                .trim() + ".",
+            lint_score: 42 // safely inside your B1 range
+        }
+    };
 }
