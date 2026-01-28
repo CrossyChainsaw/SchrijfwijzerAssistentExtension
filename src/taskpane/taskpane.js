@@ -201,33 +201,61 @@ function createSuggestionCard(item, container) {
 
         <div class="sentence-block suggestion-block">
             <strong class="no-break">AI-suggestie</strong>
-            <div>${item.simplified.sentence}</div>
+            <div class="suggestion-text" contenteditable="false">
+                ${item.simplified.sentence}
+            </div>
 
-            <div style="margin-top:12px;">
+            <div class="action-row" style="margin-top:12px;">
                 <button class="accept-btn">Accepteren</button>
                 <button class="modify-btn">Aanpassen</button>
                 <button class="deny-btn">Weigeren</button>
             </div>
-        </div>
 
+            <div class="edit-row" style="margin-top:12px; display:none;">
+                <button class="save-btn">Opslaan</button>
+                <button class="cancel-btn">Annuleren</button>
+            </div>
+        </div>
     `;
 
+    const suggestionEl = div.querySelector(".suggestion-text");
+    const actionRow = div.querySelector(".action-row");
+    const editRow = div.querySelector(".edit-row");
 
+    const originalSuggestion = item.simplified.sentence;
+
+    // ✅ ACCEPT
     div.querySelector(".accept-btn").onclick = async () => {
-        await replaceInWord(item.simplified.sentence, item.original.sentence);
-
-        undoStack.push({
-            type: "replace",
-            item,
-            previousText: item.original.sentence,
-            appliedText: item.simplified.sentence,
-            pageIndex: paginatedResults.indexOf(item)
-        });
-
-        removeItemFromPagination(item);
+        await applySuggestion(item, suggestionEl.innerText);
     };
 
+    // ✏️ MODIFY
+    div.querySelector(".modify-btn").onclick = () => {
+        suggestionEl.contentEditable = "true";
+        suggestionEl.focus();
 
+        actionRow.style.display = "none";
+        editRow.style.display = "block";
+    };
+
+    // 💾 SAVE
+    div.querySelector(".save-btn").onclick = async () => {
+        const newText = suggestionEl.innerText.trim();
+
+        item.simplified.sentence = newText;
+        await applySuggestion(item, newText);
+    };
+
+    // ❌ CANCEL
+    div.querySelector(".cancel-btn").onclick = () => {
+        suggestionEl.innerText = originalSuggestion;
+        suggestionEl.contentEditable = "false";
+
+        editRow.style.display = "none";
+        actionRow.style.display = "block";
+    };
+
+    // 🚫 DENY
     div.querySelector(".deny-btn").onclick = () => {
         undoStack.push({
             type: "deny",
@@ -238,9 +266,24 @@ function createSuggestionCard(item, container) {
         removeItemFromPagination(item);
     };
 
-
     container.appendChild(div);
 }
+
+async function applySuggestion(item, textToApply) {
+    await replaceInWord(textToApply, item.original.sentence);
+
+    undoStack.push({
+        type: "replace",
+        item,
+        previousText: item.original.sentence,
+        appliedText: textToApply,
+        pageIndex: paginatedResults.indexOf(item)
+    });
+
+    removeItemFromPagination(item);
+}
+
+
 
 // =====================
 // UNDO
