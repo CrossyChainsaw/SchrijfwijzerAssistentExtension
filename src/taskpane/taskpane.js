@@ -93,12 +93,17 @@ async function exportSentences() {
 
                 if (response.ok) {
                     const data = await response.json();
+
                     data.simplified.sentence = data.simplified.sentence
                         .replace(/\[\[\s*##\s*completed\s*##\s*\]\]/gi, "")
                         .trim();
 
+                    // 🔥 store original AI suggestion (for undo after modify)
+                    data.simplified.originalSentence = data.simplified.sentence;
+
                     results.push(data);
                 }
+
             } catch (err) {
                 console.error(err);
             }
@@ -270,6 +275,8 @@ function createSuggestionCard(item, container) {
 }
 
 async function applySuggestion(item, textToApply) {
+    const originalSuggestion = item.simplified.originalSentence ?? item.simplified.sentence;
+
     await replaceInWord(textToApply, item.original.sentence);
 
     undoStack.push({
@@ -277,11 +284,13 @@ async function applySuggestion(item, textToApply) {
         item,
         previousText: item.original.sentence,
         appliedText: textToApply,
+        originalSuggestion,           // 🔥 track AI version
         pageIndex: paginatedResults.indexOf(item)
     });
 
     removeItemFromPagination(item);
 }
+
 
 
 
@@ -296,14 +305,14 @@ function setupUndoButton() {
 
         const last = undoStack.pop();
 
-        // Restore Word text if needed and scroll to it
+        // Restore Word text
         if (last.type === "replace") {
             await replaceInWord(last.previousText, last.appliedText);
-
-            // Scroll Word to the restored text
             await highlightInWord(last.previousText);
-        }
 
+            // 🔥 restore ORIGINAL AI suggestion
+            last.item.simplified.sentence = last.originalSuggestion;
+        }
 
         // Restore suggestion into pagination
         if (typeof last.pageIndex === "number") {
@@ -314,6 +323,7 @@ function setupUndoButton() {
         renderCurrentPage();
         updateUndoButtonState();
     };
+
 
     updateUndoButtonState();
 }
@@ -391,17 +401,19 @@ function removeItemFromPagination(item) {
 
 
 function getMockSuggestion(sentence) {
+    const simplified = sentence
+        .replace(/,/g, "")
+        .replace(/\b(daarom|echter|desondanks)\b/gi, "omdat")
+        .replace(/\s+/g, " ")
+        .trim() + ".";
+
     return {
-        original: {
-            sentence
-        },
+        original: { sentence },
         simplified: {
-            sentence: sentence
-                .replace(/,/g, "")
-                .replace(/\b(daarom|echter|desondanks)\b/gi, "omdat")
-                .replace(/\s+/g, " ")
-                .trim() + ".",
-            lint_score: 42 // safely inside your B1 range
+            sentence: simplified,
+            originalSentence: simplified, // 🔥 keep pristine copy
+            lint_score: 42
         }
     };
 }
+
